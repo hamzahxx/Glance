@@ -142,6 +142,7 @@ account, nothing published, removable from Keychain Access.
 ```sh
 swift build
 swift test                  # 96 tests
+./bundle.sh dmg             # -> build/Glance.dmg, universal, for sharing
 ./bundle.sh                 # -> build/Glance.app
 ./bundle.sh install         # also copies to ~/Applications
 open -n build/Glance.app

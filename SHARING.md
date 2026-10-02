@@ -18,11 +18,13 @@ time, and macOS words that step alarmingly.
 ## Build something shareable
 
 ```sh
-./bundle.sh release universal zip      # -> build/Glance.zip
+./bundle.sh dmg          # -> build/Glance.dmg, universal, ~1.8 MB
 ```
 
-Without `universal` the binary carries only the building machine's
-architecture and will not launch on the other kind.
+`dmg` implies a release build for both Apple Silicon and Intel. Without it the
+binary carries only the building machine's architecture and will not launch on
+the other kind. `./bundle.sh release universal zip` produces a plain zip
+instead, if that suits better.
 
 ## First launch
 
