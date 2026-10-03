@@ -22,6 +22,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// come back to a shape the saved profile fits.
     private var displaysNeedCalibration = false
     private var gate = MovementGate()
+    /// Pause rule currently holding movement, cached: reading the window list
+    /// every frame would cost far more than the answer changes.
+    private var suppression: Suppression?
+    private var suppressionCheckedAt: TimeInterval = 0
     private let cursorMemoryStore = CursorMemoryStore()
     private var cursorMemory = CursorMemory()
     /// Where we last warped the pointer, so our own move is not mistaken for
@@ -78,6 +82,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.screensChanged() }
         }
+        // Pause rules follow the frontmost app and whether it went fullscreen.
+        let workspace = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.activeSpaceDidChangeNotification] {
+            workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateSuppression() }
+            }
+        }
+        updateSuppression()
 
         refresh()
     }
@@ -334,10 +346,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .disabled: "Disabled"
         case .initializing: "Starting camera…"
         case .calibrating: "Calibration required"
-        case .tracking: "Tracking head pose (no cursor control yet)"
+        case .tracking: suppression.map(heldText) ?? "Tracking head pose (no cursor control yet)"
         case .paused(let reason): "Paused — \(reason.rawValue)"
         case .error(let message): "Error — \(message)"
         }
+    }
+
+    private func heldText(_ suppression: Suppression) -> String {
+        let front = NSWorkspace.shared.frontmostApplication
+        switch suppression {
+        case .app(let id):
+            let name = NSRunningApplication.runningApplications(withBundleIdentifier: id).first?.localizedName ?? id
+            return "Held — \(name) is in your pause list"
+        case .fullscreen:
+            return "Held — \(front?.localizedName ?? "the active app") is fullscreen"
+        }
+    }
+
+    // MARK: - Pause rules
+
+    private func updateSuppression() {
+        suppressionCheckedAt = ProcessInfo.processInfo.systemUptime
+        let front = NSWorkspace.shared.frontmostApplication
+        let settings = controller.settings
+        let fullscreen = settings.pauseWhenFullscreen
+            && front.map { frontmostIsFullscreen(pid: $0.processIdentifier) } == true
+        let updated = PauseRules.suppression(
+            frontmostBundleID: front?.bundleIdentifier, frontmostIsFullscreen: fullscreen, settings: settings
+        )
+        guard updated != suppression else { return }
+        suppression = updated
+        gate.reset()
+        refresh()
+    }
+
+    /// Bounds, owner and layer come without Screen Recording permission; only
+    /// window titles need it.
+    private func frontmostIsFullscreen(pid: pid_t) -> Bool {
+        let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] ?? []
+        let bounds = info.compactMap { window -> CGRect? in
+            guard window[kCGWindowOwnerPID as String] as? pid_t == pid,
+                  window[kCGWindowLayer as String] as? Int == 0,
+                  let dict = window[kCGWindowBounds as String] as? NSDictionary
+            else { return nil }
+            return CGRect(dictionaryRepresentation: dict as CFDictionary)
+        }
+        return PauseRules.isFullscreen(windowBounds: bounds, displayFrames: snapshots.map(\.frame))
     }
 
     // MARK: - Actions
@@ -425,6 +480,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func considerMoving(_ pose: HeadPose?) {
         // 1. The state machine must permit movement. Exactly one state does.
         guard controller.state.allowsCursorMovement else {
+            gate.reset()
+            return
+        }
+        // 1b. No pause rule may be holding. Re-read at most once a second:
+        //     not every hold starts or ends with a notification (a slideshow
+        //     that does not change Space, for one).
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - suppressionCheckedAt >= 1 { updateSuppression() }
+        guard suppression == nil else {
             gate.reset()
             return
         }
@@ -677,6 +741,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func screensChanged() {
         reloadCalibration()
+        updateSuppression()
         let validity = validity()
         switch displayChangeAction(isValid: validity.isValid, state: controller.state) {
         case .recalibrate where !explainingScreenChange:
@@ -718,6 +783,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let view = SettingsView(settings: controller.settings) { [weak self] updated in
                 self?.controller.settings = updated
                 self?.visionEngine?.apply(updated)
+                self?.updateSuppression()
             }
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 420, height: 400),
