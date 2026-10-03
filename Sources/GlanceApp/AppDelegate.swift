@@ -678,7 +678,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             explainingScreenChange = true
             warn("Recalibration required", validity.explanation)
             explainingScreenChange = false
-            controller.apply(.recalibrate)
+            // The world moved during the modal: notifications reloaded the
+            // displays, and engine events may have left tracking (face lost).
+            if !self.validity().isValid {
+                if controller.state == .tracking {
+                    controller.apply(.recalibrate)
+                } else {
+                    wantsCalibration = true
+                }
+            }
         }
         refresh()
     }
