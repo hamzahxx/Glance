@@ -127,6 +127,25 @@ func twinMonitorsSurviveBuildAndValidity() throws {
     #expect(profile.validity(against: snapshots) == .valid)
 }
 
+@Test("Unplugging the left of two identical monitors invalidates the profile")
+func twinUnplugInvalidates() throws {
+    let twin = DisplayIdentifier(vendor: 7, model: 9, serial: 0)
+    let leftRaw = DisplaySnapshot(id: twin, cgID: 1, frame: CGRect(x: 0, y: 0, width: 1440, height: 900))
+    let rightRaw = DisplaySnapshot(id: twin, cgID: 2, frame: CGRect(x: 1440, y: 0, width: 1440, height: 900))
+    let snapshots = DisplayGeometry.disambiguated([leftRaw, rightRaw])
+    let left = try #require(snapshots.first { $0.cgID == 1 })
+    let right = try #require(snapshots.first { $0.cgID == 2 })
+    let profile = try #require(try? CalibrationBuilder.build(
+        samples: samples(display: left.id, centres: [-10, 0, 10])
+            + samples(display: right.id, centres: [40, 50, 60]),
+        snapshots: snapshots
+    ).get())
+
+    // The survivor is re-identified on its own, as the app does on reload.
+    let remaining = DisplayGeometry.disambiguated([rightRaw])
+    #expect(!profile.validity(against: remaining).isValid)
+}
+
 // MARK: - Validity
 
 @Test("A profile is invalid when a connected display was never calibrated")
