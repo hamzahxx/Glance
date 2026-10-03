@@ -33,7 +33,13 @@ public enum PauseRules {
     /// visible and so does not count.
     public static func isFullscreen(windowBounds: [CGRect], displayFrames: [CGRect]) -> Bool {
         windowBounds.contains { window in
-            displayFrames.contains { $0.integral == window.integral }
+            // Within a point on every edge: window bounds can carry float
+            // noise, and `integral` rounds outward, turning 1440.0001 into
+            // 1441. Real non-fullscreen windows miss by a menu bar or more.
+            displayFrames.contains { frame in
+                abs(frame.minX - window.minX) < 1 && abs(frame.minY - window.minY) < 1
+                    && abs(frame.maxX - window.maxX) < 1 && abs(frame.maxY - window.maxY) < 1
+            }
         }
     }
 }

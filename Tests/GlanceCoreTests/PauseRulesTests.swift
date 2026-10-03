@@ -55,3 +55,19 @@ func fullscreenBelowNotch() {
                                      displayFrames: rects))
     #expect(PauseRules.fullscreenRects(frame: frame, topInset: 0) == [frame])
 }
+
+@Test("The pause list wins over fullscreen")
+func pauseListBeatsFullscreen() {
+    let settings = Settings(pausedApps: ["com.apple.Keynote"])
+    #expect(PauseRules.suppression(frontmostBundleID: "com.apple.Keynote", frontmostIsFullscreen: true,
+                                   settings: settings) == .app("com.apple.Keynote"))
+}
+
+@Test("Sub-point window bounds still match the display frame")
+func fullscreenBoundsRounding() {
+    let display = [CGRect(x: 0, y: 0, width: 1440, height: 900)]
+    #expect(PauseRules.isFullscreen(windowBounds: [CGRect(x: 0, y: 0, width: 1440.0001, height: 899.9999)],
+                                    displayFrames: display))
+    #expect(!PauseRules.isFullscreen(windowBounds: [CGRect(x: 0, y: 0, width: 1440, height: 898)],
+                                     displayFrames: display))
+}
