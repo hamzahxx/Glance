@@ -607,7 +607,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         logMove(point: point, description: description, frontmostBefore: before)
         let bounce = regrets.recordMove(
             to: decision.target.display, at: ProcessInfo.processInfo.systemUptime,
-            day: RegretStatsStore.day(Date())
+            day: RegretStatsStore.day(Date()), pointerMoved: controller.settings.moveCursor
         )
         if let bounce { noteRegret(bounce) } else { regretStore.save(regrets.stats) }
         if menuIsOpen { refreshDetails() }

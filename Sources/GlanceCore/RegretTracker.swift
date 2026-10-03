@@ -69,6 +69,9 @@ public struct RegretTracker: Sendable {
     public private(set) var stats: RegretStats
 
     private var last: (target: DisplayIdentifier, at: TimeInterval, day: String)?
+    /// Where the pointer was last seen: the user's own position, or the
+    /// target after Glance warped there.
+    private var pointerDisplay: DisplayIdentifier?
 
     public init(stats: RegretStats = RegretStats()) {
         self.stats = stats
@@ -76,8 +79,13 @@ public struct RegretTracker: Sendable {
 
     /// Glance moved to `target`. Returns a bounce, charged to the previous
     /// target, when this move leaves it within the bounce window.
+    /// `pointerMoved` is false when the cursor-move setting is off and the
+    /// pointer stayed where it was.
     @discardableResult
-    public mutating func recordMove(to target: DisplayIdentifier, at time: TimeInterval, day: String) -> RegretEvent? {
+    public mutating func recordMove(
+        to target: DisplayIdentifier, at time: TimeInterval, day: String, pointerMoved: Bool = true
+    ) -> RegretEvent? {
+        if pointerMoved { pointerDisplay = target }
         var regret: RegretEvent?
         if let last, last.target != target, time - last.at <= Self.bounceWindow {
             count(.bounce, for: last.target, day: last.day)
@@ -89,10 +97,15 @@ public struct RegretTracker: Sendable {
     }
 
     /// The user's own pointer is on `display`. Never pass a position Glance
-    /// set itself. Returns a hand revert when it left the last target in time.
+    /// set itself. Returns a hand revert when the pointer left the last target
+    /// in time. Only a transition off the target counts: with cursor moves off
+    /// the pointer never reached it, and nudging it where it sits is not a
+    /// regret.
     @discardableResult
     public mutating func observeUserPointer(on display: DisplayIdentifier?, at time: TimeInterval) -> RegretEvent? {
-        guard let last, let display, display != last.target,
+        let previous = pointerDisplay
+        if let display { pointerDisplay = display }
+        guard let last, let display, previous == last.target, display != last.target,
               time - last.at <= Self.handRevertWindow
         else { return nil }
         count(.handRevert, for: last.target, day: last.day)

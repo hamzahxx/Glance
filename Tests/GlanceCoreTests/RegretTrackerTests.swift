@@ -90,3 +90,21 @@ func regretStatsPersistence() throws {
     try Data("not json".utf8).write(to: url)
     #expect(store.load() == RegretStats())
 }
+
+@Test("With the cursor left behind, nudging it on the old display is not a revert")
+func noRevertWithoutLeavingTarget() {
+    var t = RegretTracker()
+    t.observeUserPointer(on: a, at: 9)
+    t.recordMove(to: b, at: 10, day: day, pointerMoved: false)
+    #expect(t.observeUserPointer(on: a, at: 10.5) == nil)
+    #expect(t.observeUserPointer(on: a, at: 11) == nil)
+    #expect(tally(t, b).handReverts == 0)
+}
+
+@Test("Pointer on the target, then off it within 2 s, is a revert")
+func revertAfterUsingTarget() {
+    var t = RegretTracker()
+    t.recordMove(to: b, at: 10, day: day, pointerMoved: false)
+    #expect(t.observeUserPointer(on: b, at: 10.5) == nil)
+    #expect(t.observeUserPointer(on: a, at: 11) == RegretEvent(kind: .handRevert, display: b))
+}
