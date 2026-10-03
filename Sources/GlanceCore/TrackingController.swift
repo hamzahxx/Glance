@@ -33,13 +33,15 @@ public final class TrackingController {
             apply(.enable)
             engine.start()
         } else {
-            engine.stop()
             apply(.disable)
         }
     }
 
     public func apply(_ event: TrackingEvent) {
         guard let next = reduce(state, event) else { return }
+        // Every route into Disabled releases the camera, whoever asked for it.
+        // Otherwise the engine keeps running and the next start is ignored.
+        if next == .disabled { engine.stop() }
         state = next
     }
 }

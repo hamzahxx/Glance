@@ -50,6 +50,25 @@ func toggleOffStopsEngineFromAnyLiveState() {
 }
 
 @Test @MainActor
+func disableFromOutsideTheToggleStopsEngine() {
+    let (controller, engine) = makeController()
+    controller.toggle()
+    engine.emit(.engineReady(calibrated: false))
+    #expect(controller.state == .calibrating)
+
+    // The app's calibration-cancel / unusable-profile paths.
+    controller.apply(.disable)
+    #expect(controller.state == .disabled)
+    #expect(engine.stopCount == 1)
+
+    // Ignored disable must not stop again; restart must start again.
+    controller.apply(.disable)
+    #expect(engine.stopCount == 1)
+    controller.toggle()
+    #expect(engine.startCount == 2)
+}
+
+@Test @MainActor
 func toggleClearsAnError() {
     let (controller, engine) = makeController()
     controller.toggle()
