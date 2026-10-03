@@ -392,7 +392,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             else { return nil }
             return CGRect(dictionaryRepresentation: dict as CFDictionary)
         }
-        return PauseRules.isFullscreen(windowBounds: bounds, displayFrames: snapshots.map(\.frame))
+        let insets = Dictionary(NSScreen.screens.compactMap { screen -> (UInt32, CGFloat)? in
+            guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+            else { return nil }
+            return (number.uint32Value, screen.safeAreaInsets.top)
+        }, uniquingKeysWith: { a, _ in a })
+        let frames = snapshots.flatMap {
+            PauseRules.fullscreenRects(frame: $0.frame, topInset: insets[$0.cgID] ?? 0)
+        }
+        return PauseRules.isFullscreen(windowBounds: bounds, displayFrames: frames)
     }
 
     // MARK: - Actions

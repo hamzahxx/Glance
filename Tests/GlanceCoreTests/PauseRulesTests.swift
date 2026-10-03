@@ -42,3 +42,16 @@ func pauseRulesDecodeDefaults() throws {
     #expect(settings.pausedApps.isEmpty)
     #expect(settings.dwellMs == 500)
 }
+
+@Test("Fullscreen below a notch counts; a maximised window on that display does not")
+func fullscreenBelowNotch() {
+    let frame = CGRect(x: 0, y: 0, width: 1512, height: 982)
+    let rects = PauseRules.fullscreenRects(frame: frame, topInset: 32)
+    #expect(rects.count == 2)
+    #expect(PauseRules.isFullscreen(windowBounds: [CGRect(x: 0, y: 32, width: 1512, height: 950)],
+                                    displayFrames: rects))
+    // Maximised: below the taller notched menu bar, above the Dock.
+    #expect(!PauseRules.isFullscreen(windowBounds: [CGRect(x: 0, y: 38, width: 1512, height: 870)],
+                                     displayFrames: rects))
+    #expect(PauseRules.fullscreenRects(frame: frame, topInset: 0) == [frame])
+}

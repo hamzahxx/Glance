@@ -19,8 +19,18 @@ public enum PauseRules {
         return nil
     }
 
-    /// A window is fullscreen when it covers a display's whole frame. A
-    /// maximised window leaves the menu bar visible and so does not count.
+    /// The rects a fullscreen window may occupy on one display: the whole
+    /// frame, and on a notched display the frame below the notch, which is
+    /// where apps that do not opt into the notch area are put.
+    public static func fullscreenRects(frame: CGRect, topInset: CGFloat) -> [CGRect] {
+        guard topInset > 0 else { return [frame] }
+        return [frame, CGRect(x: frame.minX, y: frame.minY + topInset,
+                              width: frame.width, height: frame.height - topInset)]
+    }
+
+    /// A window is fullscreen when it covers one of `displayFrames` exactly
+    /// (see `fullscreenRects`). A maximised window leaves the menu bar
+    /// visible and so does not count.
     public static func isFullscreen(windowBounds: [CGRect], displayFrames: [CGRect]) -> Bool {
         windowBounds.contains { window in
             displayFrames.contains { $0.integral == window.integral }
