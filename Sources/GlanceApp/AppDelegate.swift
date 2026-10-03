@@ -654,8 +654,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let url = CalibrationStore.directory.appendingPathComponent("movement.log")
         try? FileManager.default.createDirectory(at: CalibrationStore.directory, withIntermediateDirectories: true)
         if let handle = try? FileHandle(forWritingTo: url) {
-            handle.seekToEndOfFile()
-            handle.write(Data(line.utf8))
+            // The throwing API: the legacy write raises an exception on a full
+            // disk, which would crash the app mid-move.
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: Data(line.utf8))
             try? handle.close()
         } else {
             try? line.write(to: url, atomically: true, encoding: .utf8)
