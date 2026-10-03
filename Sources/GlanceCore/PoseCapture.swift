@@ -22,6 +22,7 @@ public final class PoseCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDe
     public var onFailure: (@Sendable (String) -> Void)?
 
     public private(set) var deviceName = "unknown"
+    private var observers: [NSObjectProtocol] = []
 
     public enum StartError: Error, CustomStringConvertible {
         case permissionDenied
@@ -89,9 +90,15 @@ public final class PoseCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDe
             session.addOutput(output)
         }
 
-        for name in [AVCaptureSession.runtimeErrorNotification, .AVCaptureDeviceWasDisconnected] {
+        // Scoped to our session and camera, and replaced per start, so a
+        // restart does not stack a second set that fires onFailure twice.
+        removeObservers()
+        observers = [
+            (AVCaptureSession.runtimeErrorNotification, session as AnyObject),
+            (.AVCaptureDeviceWasDisconnected, device),
+        ].map { name, object in
             NotificationCenter.default.addObserver(
-                forName: name, object: nil, queue: nil
+                forName: name, object: object, queue: nil
             ) { [weak self] note in
                 let detail = (note.userInfo?[AVCaptureSessionErrorKey] as? Error)?.localizedDescription
                 self?.onFailure?(detail ?? "camera disconnected")
@@ -102,7 +109,13 @@ public final class PoseCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDe
     }
 
     public func stop() {
+        removeObservers()
         session.stopRunning()
+    }
+
+    private func removeObservers() {
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers = []
     }
 
     public func captureOutput(
