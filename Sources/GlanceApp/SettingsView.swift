@@ -101,7 +101,7 @@ struct SettingsView: View {
 
             Section("Pause automatically") {
                 Toggle("When the active app is fullscreen", isOn: $settings.pauseWhenFullscreen)
-                Text("Presentations, games and videos. A fullscreen video on one display holds glancing to the others until you click away from it.")
+                Text("Presentations, games and videos. This is judged per app: any fullscreen window of the active app holds, so a fullscreen Safari video on one display holds glancing even from another Safari window. Click a different app to resume.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 ForEach(settings.pausedApps, id: \.self) { id in
