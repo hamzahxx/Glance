@@ -18,6 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var classifier: YawClassifier?
     private var runner: CalibrationRunner?
     private var wantsCalibration = false
+    /// Set by a display change, not by the user, so it lapses if the displays
+    /// come back to a shape the saved profile fits.
+    private var displaysNeedCalibration = false
     private var gate = MovementGate()
     private let cursorMemoryStore = CursorMemoryStore()
     private var cursorMemory = CursorMemory()
@@ -564,10 +567,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if state == .calibrating, runner == nil {
             beginCalibration()
         }
-        if state == .tracking, wantsCalibration, runner == nil {
-            wantsCalibration = false
-            controller.apply(.recalibrate)
-            return
+        if state == .tracking, runner == nil {
+            let displays = displaysNeedCalibration && !validity().isValid
+            displaysNeedCalibration = false
+            if wantsCalibration || displays {
+                wantsCalibration = false
+                controller.apply(.recalibrate)
+                return
+            }
         }
         if state == .disabled {
             runner?.cancel()
@@ -578,6 +585,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func beginCalibration() {
         wantsCalibration = false
+        displaysNeedCalibration = false
         reloadCalibration()
         let runner = CalibrationRunner(
             snapshots: snapshots, allowStrips: controller.settings.enableStrips
@@ -683,13 +691,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // displays, and engine events may have left tracking (face lost).
             switch displayChangeAction(isValid: self.validity().isValid, state: controller.state) {
             case .recalibrate: controller.apply(.recalibrate)
-            case .deferred: wantsCalibration = true
+            case .deferred: displaysNeedCalibration = true
             case .none: break
             }
         case .deferred:
             // Paused (face lost): nothing moves now, but resuming on this
             // mapping would leave the cursor frozen. Calibrate on resume.
-            wantsCalibration = true
+            displaysNeedCalibration = true
         default:
             break
         }
