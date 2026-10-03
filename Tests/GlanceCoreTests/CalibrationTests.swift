@@ -107,6 +107,26 @@ func displaySeparability() throws {
     #expect(profile.displays.count == 2)
 }
 
+@Test("Identical monitors calibrate as two displays and stay valid")
+func twinMonitorsSurviveBuildAndValidity() throws {
+    // Same vendor, model and serial: only the tiebreaker tells them apart.
+    let twin = DisplayIdentifier(vendor: 7, model: 9, serial: 0)
+    let snapshots = DisplayGeometry.disambiguated([
+        DisplaySnapshot(id: twin, cgID: 2, frame: CGRect(x: 1440, y: 0, width: 1440, height: 900)),
+        DisplaySnapshot(id: twin, cgID: 1, frame: CGRect(x: 0, y: 0, width: 1440, height: 900)),
+    ])
+    let left = try #require(snapshots.first { $0.cgID == 1 })
+    let right = try #require(snapshots.first { $0.cgID == 2 })
+    let profile = try #require(try? CalibrationBuilder.build(
+        samples: samples(display: left.id, centres: [-10, 0, 10])
+            + samples(display: right.id, centres: [40, 50, 60]),
+        snapshots: snapshots
+    ).get())
+
+    #expect(profile.displays.count == 2)
+    #expect(profile.validity(against: snapshots) == .valid)
+}
+
 // MARK: - Validity
 
 @Test("A profile is invalid when a connected display was never calibrated")
