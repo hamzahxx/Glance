@@ -38,6 +38,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastWarpedPoint: CGPoint?
     private var hotKey: EmergencyHotKey?
     private var lastAction: String?
+    /// Created on first show, so a user who never turns it on never builds it.
+    private var hud: YawHUDPanel?
+    private let hudItem = NSMenuItem(title: "Show Yaw HUD", action: nil, keyEquivalent: "")
+    /// The last move, kept briefly so the HUD can name it.
+    private var lastMove: (decision: MovementGate.Decision, name: String, at: TimeInterval)?
     private let actionItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let regretItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private var profilesItem: NSMenuItem?
@@ -77,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             self.runner?.ingest(pose)
             self.considerMoving(pose)
+            self.updateHUD(pose)
             // Only worth redrawing while someone is looking at the menu.
             if self.menuIsOpen { self.refreshDetails() }
         }
@@ -124,6 +130,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let enable = action("Enable Window Focus…", #selector(requestAccessibility))
         enableFocusItem = enable
         menu.addItem(enable)
+        hudItem.action = #selector(toggleHUD)
+        hudItem.target = self
+        menu.addItem(hudItem)
         menu.addItem(action("Calibrate Displays…", #selector(openCalibration)))
         let profiles = NSMenuItem(title: "Calibration Profile", action: nil, keyEquivalent: "")
         profiles.submenu = profilesMenu()
@@ -153,6 +162,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
         toggleItem.title = (state == .disabled ? "Start Tracking" : "Stop Tracking")
             + (hotKey == nil ? "" : "   \(EmergencyHotKey.displayName)")
+        hudItem.state = controller.settings.showHUD ? .on : .off
+        updateHUD(visionEngine?.latestPose)
         refreshDetails()
     }
 
@@ -416,6 +427,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Actions
 
+    @objc private func toggleHUD() {
+        controller.settings.showHUD.toggle()
+        refresh()
+    }
+
+    // MARK: - HUD
+
+    /// Shown only while tracking is on and the setting asks for it.
+    private func updateHUD(_ pose: HeadPose?) {
+        let state = controller.state
+        guard controller.settings.showHUD, state != .disabled else {
+            hud?.hide()
+            return
+        }
+        let hud = self.hud ?? YawHUDPanel()
+        self.hud = hud
+        if !hud.isVisible { hud.show() }
+
+        let bands = classifier?.bands ?? []
+        let scale = HUDModel.scale(for: bands)
+        // Anything holding movement outside the gate, in considerMoving's order.
+        let hold: String? = if state != .tracking {
+            statusText(for: state)
+        } else if let suppression {
+            heldText(suppression)
+        } else if !validity().isValid {
+            "Held — calibration does not fit these displays"
+        } else {
+            nil
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        let move = lastMove.flatMap { now - $0.at < 1 ? (decision: $0.decision, name: $0.name) : nil }
+        hud.update(YawHUDPanel.Frame(
+            model: HUDModel.make(
+                yaw: pose?.yaw,
+                prediction: pose.flatMap { classifier?.classify(yaw: $0.yaw) },
+                refusal: gate.lastRefusal,
+                holdReason: hold,
+                recentMove: move,
+                scale: scale
+            ),
+            bands: bands,
+            scale: scale,
+            seamMargin: classifier?.seamMargin ?? YawClassifier.defaultMargin
+        ))
+    }
+
     @objc private func toggleTracking() {
         controller.toggle()
     }
@@ -603,6 +661,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         lastAction = description + "  (\(timeString()))"
+        lastMove = (decision, snapshot.name, ProcessInfo.processInfo.systemUptime)
         cursorMemoryStore.save(cursorMemory)
         logMove(point: point, description: description, frontmostBefore: before)
         let bounce = regrets.recordMove(
@@ -824,9 +883,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func openSettings() {
         if settingsWindow == nil {
             let view = SettingsView(settings: controller.settings) { [weak self] updated in
-                self?.controller.settings = updated
-                self?.visionEngine?.apply(updated)
-                self?.updateSuppression()
+                guard let self else { return }
+                // The HUD is toggled from the menu; the window's copy may be stale.
+                var updated = updated
+                updated.showHUD = self.controller.settings.showHUD
+                self.controller.settings = updated
+                self.visionEngine?.apply(updated)
+                self.updateSuppression()
             }
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 420, height: 400),
