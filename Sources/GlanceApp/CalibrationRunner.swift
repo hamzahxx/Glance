@@ -159,9 +159,13 @@ final class CalibrationRunner {
                subhead: "\(steps.count) targets across \(panels.count) display(s). "
                    + "Follow the drop and hold still.  SPACE or click to start · ESC to cancel")
 
-        ticker = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+        let ticker = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
+        // Common modes, so the animation keeps running under a modal alert or
+        // menu tracking instead of looking frozen.
+        RunLoop.main.add(ticker, forMode: .common)
+        self.ticker = ticker
     }
 
     /// Fed from the tracking engine; calibration never opens its own camera.

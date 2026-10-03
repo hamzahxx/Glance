@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let targetItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let calibrationItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private var menuIsOpen = false
+    private var explainingScreenChange = false
 
     init(engine: TrackingEngine) {
         visionEngine = engine as? VisionTrackingEngine
@@ -669,11 +670,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func screensChanged() {
         reloadCalibration()
         let validity = validity()
-        if !validity.isValid, controller.state == .tracking {
-            // Fail closed: stop predicting against a mapping that no longer
-            // describes the desk.
-            controller.apply(.recalibrate)
+        if !validity.isValid, controller.state == .tracking, !explainingScreenChange {
+            // Movement already fails closed on the invalid mapping. Explain
+            // before calibrating: the overlay sits at screen-saver level and
+            // would hide the alert. One reconnect fires several notifications,
+            // and they arrive during the modal, so explain only once.
+            explainingScreenChange = true
             warn("Recalibration required", validity.explanation)
+            explainingScreenChange = false
+            controller.apply(.recalibrate)
         }
         refresh()
     }
