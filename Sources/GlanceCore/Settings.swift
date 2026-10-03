@@ -26,6 +26,11 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Return the pointer to where it last sat on the target display, instead of
     /// that display's centre.
     public var restoreCursorPosition: Bool
+    /// Hold all movement while the frontmost app has a fullscreen window:
+    /// presentations, games, videos.
+    public var pauseWhenFullscreen: Bool
+    /// Bundle IDs that hold all movement while frontmost.
+    public var pausedApps: [String]
 
     public init(
         version: Int = Settings.currentVersion,
@@ -36,7 +41,9 @@ public struct Settings: Codable, Equatable, Sendable {
         moveCursor: Bool = true,
         activateApp: Bool = true,
         typingIdleSeconds: Double = 0.5,
-        restoreCursorPosition: Bool = true
+        restoreCursorPosition: Bool = true,
+        pauseWhenFullscreen: Bool = true,
+        pausedApps: [String] = []
     ) {
         self.version = version
         self.dwellMs = dwellMs
@@ -47,6 +54,8 @@ public struct Settings: Codable, Equatable, Sendable {
         self.activateApp = activateApp
         self.typingIdleSeconds = typingIdleSeconds
         self.restoreCursorPosition = restoreCursorPosition
+        self.pauseWhenFullscreen = pauseWhenFullscreen
+        self.pausedApps = pausedApps
     }
 
     public init(from decoder: Decoder) throws {
@@ -60,6 +69,8 @@ public struct Settings: Codable, Equatable, Sendable {
         activateApp = try c.decodeIfPresent(Bool.self, forKey: .activateApp) ?? true
         typingIdleSeconds = try c.decodeIfPresent(Double.self, forKey: .typingIdleSeconds) ?? 0.5
         restoreCursorPosition = try c.decodeIfPresent(Bool.self, forKey: .restoreCursorPosition) ?? true
+        pauseWhenFullscreen = try c.decodeIfPresent(Bool.self, forKey: .pauseWhenFullscreen) ?? true
+        pausedApps = try c.decodeIfPresent([String].self, forKey: .pausedApps) ?? []
     }
 
     public static let dwellRange = 100...2000
