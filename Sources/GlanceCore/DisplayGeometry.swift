@@ -11,11 +11,27 @@ public struct DisplayIdentifier: Codable, Hashable, Sendable {
     public var vendor: UInt32
     public var model: UInt32
     public var serial: UInt32
+    /// Tiebreaker for displays that report the same vendor, model and serial —
+    /// identical monitors often report serial 0. 0 for the first (leftmost) of
+    /// such a group, so a display without a twin keeps the identity profiles
+    /// saved before this field existed.
+    public var index: UInt32
 
-    public init(vendor: UInt32, model: UInt32, serial: UInt32) {
+    public init(vendor: UInt32, model: UInt32, serial: UInt32, index: UInt32 = 0) {
         self.vendor = vendor
         self.model = model
         self.serial = serial
+        self.index = index
+    }
+
+    private enum CodingKeys: String, CodingKey { case vendor, model, serial, index }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        vendor = try c.decode(UInt32.self, forKey: .vendor)
+        model = try c.decode(UInt32.self, forKey: .model)
+        serial = try c.decode(UInt32.self, forKey: .serial)
+        index = try c.decodeIfPresent(UInt32.self, forKey: .index) ?? 0
     }
 }
 
@@ -54,7 +70,7 @@ public enum DisplayGeometry {
         var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
         guard CGGetActiveDisplayList(count, &ids, &count) == .success else { return [] }
 
-        return ids.prefix(Int(count)).map { id in
+        return disambiguated(ids.prefix(Int(count)).map { id in
             DisplaySnapshot(
                 id: DisplayIdentifier(
                     vendor: CGDisplayVendorNumber(id),
@@ -64,6 +80,23 @@ public enum DisplayGeometry {
                 cgID: id,
                 frame: CGDisplayBounds(id)
             )
+        })
+    }
+
+    /// Gives displays that share vendor, model and serial distinct identities,
+    /// numbered left to right (then top to bottom). Two identical monitors
+    /// cannot be told apart by hardware, so position is the only stable
+    /// handle; swapping them is indistinguishable from not swapping them.
+    public static func disambiguated(_ snapshots: [DisplaySnapshot]) -> [DisplaySnapshot] {
+        var result = snapshots
+        let groups = Dictionary(grouping: result.indices) { result[$0].id }
+        for indices in groups.values where indices.count > 1 {
+            let ordered = indices.sorted {
+                let a = result[$0].frame, b = result[$1].frame
+                return (a.minX, a.minY, result[$0].cgID) < (b.minX, b.minY, result[$1].cgID)
+            }
+            for (n, i) in ordered.enumerated() { result[i].id.index = UInt32(n) }
         }
+        return result
     }
 }
