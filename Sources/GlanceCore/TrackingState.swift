@@ -97,3 +97,24 @@ public func reduce(_ state: TrackingState, _ event: TrackingEvent) -> TrackingSt
         return nil
     }
 }
+
+/// What a display change asks of the pipeline.
+public enum DisplayChangeAction: Equatable, Sendable {
+    case none
+    /// Tracking on a mapping that no longer fits: calibrate now.
+    case recalibrate
+    /// Paused, so nothing moves yet: calibrate once tracking resumes.
+    case deferred
+}
+
+/// Pure decision behind the display-change handler, so it can be tested
+/// without AppKit. Disabled and initializing need nothing: starting the engine
+/// asks whether the profile is valid. Calibrating already has the user's eyes.
+public func displayChangeAction(isValid: Bool, state: TrackingState) -> DisplayChangeAction {
+    guard !isValid else { return .none }
+    switch state {
+    case .tracking: return .recalibrate
+    case .paused: return .deferred
+    default: return .none
+    }
+}

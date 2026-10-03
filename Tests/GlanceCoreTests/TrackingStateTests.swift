@@ -95,3 +95,23 @@ func indicatorHonesty() {
     #expect(TrackingState.paused(.faceLost).indicator == .attentionRequired)
     #expect(TrackingState.error("boom").indicator == .attentionRequired)
 }
+
+// MARK: - Display changes
+
+@Test("An invalid mapping while tracking recalibrates now")
+func displayChangeWhileTrackingRecalibrates() {
+    #expect(displayChangeAction(isValid: false, state: .tracking) == .recalibrate)
+}
+
+@Test("An invalid mapping while paused waits for tracking to resume")
+func displayChangeWhilePausedDefers() {
+    #expect(displayChangeAction(isValid: false, state: .paused(.faceLost)) == .deferred)
+}
+
+@Test("A valid mapping, or a state that already checks, needs nothing")
+func displayChangeNeedsNothing() {
+    #expect(displayChangeAction(isValid: true, state: .tracking) == .none)
+    #expect(displayChangeAction(isValid: true, state: .paused(.faceLost)) == .none)
+    #expect(displayChangeAction(isValid: false, state: .disabled) == .none)
+    #expect(displayChangeAction(isValid: false, state: .calibrating) == .none)
+}

@@ -670,7 +670,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func screensChanged() {
         reloadCalibration()
         let validity = validity()
-        if !validity.isValid, controller.state == .tracking, !explainingScreenChange {
+        switch displayChangeAction(isValid: validity.isValid, state: controller.state) {
+        case .recalibrate where !explainingScreenChange:
             // Movement already fails closed on the invalid mapping. Explain
             // before calibrating: the overlay sits at screen-saver level and
             // would hide the alert. One reconnect fires several notifications,
@@ -680,13 +681,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             explainingScreenChange = false
             // The world moved during the modal: notifications reloaded the
             // displays, and engine events may have left tracking (face lost).
-            if !self.validity().isValid {
-                if controller.state == .tracking {
-                    controller.apply(.recalibrate)
-                } else {
-                    wantsCalibration = true
-                }
+            switch displayChangeAction(isValid: self.validity().isValid, state: controller.state) {
+            case .recalibrate: controller.apply(.recalibrate)
+            case .deferred: wantsCalibration = true
+            case .none: break
             }
+        case .deferred:
+            // Paused (face lost): nothing moves now, but resuming on this
+            // mapping would leave the cursor frozen. Calibrate on resume.
+            wantsCalibration = true
+        default:
+            break
         }
         refresh()
     }
