@@ -80,7 +80,8 @@ func regretStatsPersistence() throws {
     stats.days["2026-10-03"] = ["k": RegretTally(moves: 3, handReverts: 1)]
     stats.days["2026-09-04"] = ["k": RegretTally(moves: 1)]  // 29 days back: kept
     stats.days["2026-09-03"] = ["k": RegretTally(moves: 1)]  // 30 days back: dropped
-    let today = try #require(ISO8601DateFormatter().date(from: "2026-10-03T12:00:00Z"))
+    // Local noon: day() and prune use the local calendar.
+    let today = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 3, hour: 12)))
     #expect(store.save(stats, today: today))
     let loaded = store.load()
     #expect(loaded.days["2026-10-03"] == stats.days["2026-10-03"])
@@ -107,4 +108,32 @@ func revertAfterUsingTarget() {
     t.recordMove(to: b, at: 10, day: day, pointerMoved: false)
     #expect(t.observeUserPointer(on: b, at: 10.5) == nil)
     #expect(t.observeUserPointer(on: a, at: 11) == RegretEvent(kind: .handRevert, display: b))
+}
+
+@Test("A bounce across midnight is charged to the first move's day")
+func bounceAcrossMidnight() {
+    var t = RegretTracker()
+    t.recordMove(to: b, at: 10, day: "2026-10-03")
+    t.recordMove(to: a, at: 11, day: "2026-10-04")
+    #expect(t.stats.days["2026-10-03"]?[RegretStats.key(b)] == RegretTally(moves: 1, bounces: 1))
+    #expect(t.stats.days["2026-10-04"]?[RegretStats.key(a)] == RegretTally(moves: 1))
+}
+
+@Test("Identical monitors keep separate tallies through save and load")
+func twinKeysPersistApart() throws {
+    let left = DisplayIdentifier(vendor: 7, model: 9, serial: 0, index: 0)
+    let right = DisplayIdentifier(vendor: 7, model: 9, serial: 0, index: 1)
+    var t = RegretTracker()
+    t.recordMove(to: left, at: 10, day: day)
+    t.recordMove(to: right, at: 20, day: day)
+    t.recordMove(to: right, at: 30, day: day)
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("regret-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let store = RegretStatsStore(url: url)
+    let today = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 3, hour: 12)))
+    #expect(store.save(t.stats, today: today))
+    let loaded = store.load().days[day]
+    #expect(loaded?[RegretStats.key(left)]?.moves == 1)
+    #expect(loaded?[RegretStats.key(right)]?.moves == 2)
 }
