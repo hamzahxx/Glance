@@ -16,6 +16,19 @@ public struct MovementGate {
         }
     }
 
+    /// Why the last update moved nothing. Read-only: for the HUD, never for
+    /// behaviour.
+    public enum Refusal: Equatable, Sendable {
+        /// No trusted prediction: no face, or too near a seam to call.
+        case noPrediction
+        /// Leaving the accepted target needs a bigger margin than this has.
+        case switchMargin
+        /// Candidate has not held still long enough; progress is 0...1.
+        case dwell(progress: Double)
+        /// Already moved here.
+        case sameTarget
+    }
+
     public struct Decision: Equatable, Sendable {
         public var target: Target
         /// False while the user is mid-keystroke. The cursor still moves;
@@ -35,6 +48,8 @@ public struct MovementGate {
     private var candidate: Target?
     private var candidateSince: TimeInterval = 0
     private var accepted: Target?
+    /// Nil after an update that returned a decision, or after reset.
+    public private(set) var lastRefusal: Refusal?
 
     public init(dwell: TimeInterval = 0.4, switchMargin: Double = 4, typingIdle: TimeInterval = 0.5) {
         self.dwell = dwell
@@ -53,6 +68,7 @@ public struct MovementGate {
         // accepted so a blink does not cause a repeat move to the same place.
         guard let prediction else {
             candidate = nil
+            lastRefusal = .noPrediction
             return nil
         }
 
@@ -74,14 +90,26 @@ public struct MovementGate {
                 // switch requires confidence *sustained* for the whole period
                 // rather than one confident frame after a long ambiguous stare.
                 candidateSince = now
+                lastRefusal = .switchMargin
                 return nil
             }
         }
 
-        guard now - candidateSince >= dwell else { return nil }
+        guard now - candidateSince >= dwell else {
+            // Looking back at where the cursor already is reads as "already
+            // here", not as progress toward a move that will not happen.
+            lastRefusal = target == accepted
+                ? .sameTarget
+                : .dwell(progress: dwell > 0 ? min(max((now - candidateSince) / dwell, 0), 1) : 1)
+            return nil
+        }
         // No repeated moves to the same target.
-        guard target != accepted else { return nil }
+        guard target != accepted else {
+            lastRefusal = .sameTarget
+            return nil
+        }
 
+        lastRefusal = nil
         accepted = target
         return Decision(target: target, activateFocus: keyboardIdle >= typingIdle)
     }
@@ -92,5 +120,6 @@ public struct MovementGate {
         candidate = nil
         accepted = nil
         candidateSince = 0
+        lastRefusal = nil
     }
 }

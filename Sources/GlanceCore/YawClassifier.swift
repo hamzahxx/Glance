@@ -19,6 +19,17 @@ public struct YawClassifier: Sendable {
         public var stripMargin: Double?
     }
 
+    /// One display's slice of the yaw axis, for drawing. Outer bands extend to
+    /// infinity; a seam of `seamMargin` either side of each inner boundary is
+    /// where `classify` refuses.
+    public struct Band: Equatable, Sendable {
+        public var display: DisplayIdentifier
+        public var name: String
+        public var centre: Double
+        public var lower: Double
+        public var upper: Double
+    }
+
     /// Half-gap below which two classes are too close to call. Measured: a ±2°
     /// gate removed every display error in the probe data while keeping 92% of
     /// samples.
@@ -35,6 +46,21 @@ public struct YawClassifier: Sendable {
         let live = Set(connected.map(\.id))
         candidates = profile.displays.filter { live.contains($0.display) }
     }
+
+    /// Connected displays left to right in yaw, split at the midpoints between
+    /// neighbouring centres: exactly where `nearest` changes its answer.
+    public var bands: [Band] {
+        let sorted = candidates.sorted { $0.yawMean < $1.yawMean }
+        return sorted.enumerated().map { i, d in
+            Band(
+                display: d.display, name: d.name, centre: d.yawMean,
+                lower: i == 0 ? -.infinity : (sorted[i - 1].yawMean + d.yawMean) / 2,
+                upper: i == sorted.count - 1 ? .infinity : (d.yawMean + sorted[i + 1].yawMean) / 2
+            )
+        }
+    }
+
+    public var seamMargin: Double { margin }
 
     /// Best guess with no gating, for diagnostics and menu display.
     public func nearest(yaw: Double) -> Prediction? {

@@ -31,6 +31,8 @@ public struct Settings: Codable, Equatable, Sendable {
     public var pauseWhenFullscreen: Bool
     /// Bundle IDs that hold all movement while frontmost.
     public var pausedApps: [String]
+    /// Float the yaw HUD while tracking. Off by default.
+    public var showHUD: Bool
 
     public init(
         version: Int = Settings.currentVersion,
@@ -43,7 +45,8 @@ public struct Settings: Codable, Equatable, Sendable {
         typingIdleSeconds: Double = 0.5,
         restoreCursorPosition: Bool = true,
         pauseWhenFullscreen: Bool = true,
-        pausedApps: [String] = []
+        pausedApps: [String] = [],
+        showHUD: Bool = false
     ) {
         self.version = version
         self.dwellMs = dwellMs
@@ -56,6 +59,7 @@ public struct Settings: Codable, Equatable, Sendable {
         self.restoreCursorPosition = restoreCursorPosition
         self.pauseWhenFullscreen = pauseWhenFullscreen
         self.pausedApps = pausedApps
+        self.showHUD = showHUD
     }
 
     public init(from decoder: Decoder) throws {
@@ -71,6 +75,7 @@ public struct Settings: Codable, Equatable, Sendable {
         restoreCursorPosition = try c.decodeIfPresent(Bool.self, forKey: .restoreCursorPosition) ?? true
         pauseWhenFullscreen = try c.decodeIfPresent(Bool.self, forKey: .pauseWhenFullscreen) ?? true
         pausedApps = try c.decodeIfPresent([String].self, forKey: .pausedApps) ?? []
+        showHUD = try c.decodeIfPresent(Bool.self, forKey: .showHUD) ?? false
     }
 
     public static let dwellRange = 100...2000
