@@ -12,6 +12,14 @@ Head pose, not gaze. Glance reads where your head is pointing, via macOS Vision.
 Your eyes are never located. Glancing with your eyes alone produces no signal,
 by design — it helps with deliberate switches between monitors, not quick looks.
 
+## Install
+
+Download `Glance.dmg` from [Releases](https://github.com/hamzahxx/Glance/releases)
+and drag Glance into Applications. It is **self-signed, not notarized** — there
+is no Apple Developer ID — so macOS refuses the first launch. Right-click → Open,
+or **System Settings → Privacy & Security → Open Anyway**, once per machine. See
+[SHARING.md](SHARING.md) for the details.
+
 ## What it does, and what it refuses
 
 A target held still for the dwell period (400 ms by default) moves the cursor to
