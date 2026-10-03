@@ -17,6 +17,29 @@ struct SettingsView: View {
         self.onChange = onChange
     }
 
+    private static func name(for bundleID: String) -> String {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+            .map { FileManager.default.displayName(atPath: $0.path) } ?? bundleID
+    }
+
+    private static func icon(for bundleID: String) -> NSImage {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+            .map { NSWorkspace.shared.icon(forFile: $0.path) }
+            ?? NSImage(systemSymbolName: "app", accessibilityDescription: nil) ?? NSImage()
+    }
+
+    /// Running regular apps not already listed, by name.
+    private static func addableApps(excluding listed: [String]) -> [(id: String, name: String)] {
+        let apps = NSWorkspace.shared.runningApplications.compactMap { app -> (id: String, name: String)? in
+            guard app.activationPolicy == .regular, let id = app.bundleIdentifier,
+                  id != Bundle.main.bundleIdentifier, !listed.contains(id)
+            else { return nil }
+            return (id, app.localizedName ?? id)
+        }
+        return Dictionary(apps.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            .values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
     var body: some View {
         Form {
             Section("Tracking") {
@@ -72,6 +95,31 @@ struct SettingsView: View {
                     )
                 }
                 Text("Focus never changes within this long of your last keystroke.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Pause automatically") {
+                Toggle("When the active app is fullscreen", isOn: $settings.pauseWhenFullscreen)
+                Text("Presentations, games and videos. A fullscreen video on one display holds glancing to the others until you click away from it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(settings.pausedApps, id: \.self) { id in
+                    HStack {
+                        Image(nsImage: Self.icon(for: id))
+                            .resizable()
+                            .frame(width: 16, height: 16)
+                        Text(Self.name(for: id))
+                        Spacer()
+                        Button("Remove") { settings.pausedApps.removeAll { $0 == id } }
+                    }
+                }
+                Menu("Add app…") {
+                    ForEach(Self.addableApps(excluding: settings.pausedApps), id: \.id) { app in
+                        Button(app.name) { settings.pausedApps.append(app.id) }
+                    }
+                }
+                Text("Nothing moves while one of these apps is frontmost, e.g. zoom.us while sharing your screen.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
