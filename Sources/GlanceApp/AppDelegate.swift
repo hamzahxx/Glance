@@ -28,12 +28,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var suppressionCheckedAt: TimeInterval = 0
     private let cursorMemoryStore = CursorMemoryStore()
     private var cursorMemory = CursorMemory()
+    private let regretStore = RegretStatsStore()
+    private var regrets = RegretTracker()
+    /// Last pointer position seen under the user's hand, so a pointer that sits
+    /// still (cursor move off, say) is not mistaken for the user moving it.
+    private var lastUserPointer: CGPoint?
     /// Where we last warped the pointer, so our own move is not mistaken for
     /// the user's position and recorded as "where you left off".
     private var lastWarpedPoint: CGPoint?
     private var hotKey: EmergencyHotKey?
     private var lastAction: String?
     private let actionItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let regretItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private var profilesItem: NSMenuItem?
     private let windowFocusItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private var enableFocusItem: NSMenuItem?
@@ -59,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         hotKey = EmergencyHotKey { [weak self] in self?.controller.toggle() }
         cursorMemory = cursorMemoryStore.load()
+        regrets = RegretTracker(stats: regretStore.load())
         reloadCalibration()
         controller.onStateChange = { [weak self] state in self?.stateChanged(state) }
         visionEngine?.isCalibrated = { [weak self] in
@@ -106,7 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(toggleItem)
 
         menu.addItem(.separator())
-        for item in [stateItem, cameraItem, poseItem, targetItem, calibrationItem, windowFocusItem, actionItem] {
+        for item in [stateItem, regretItem, cameraItem, poseItem, targetItem, calibrationItem, windowFocusItem, actionItem] {
             item.isEnabled = false
             menu.addItem(item)
         }
@@ -151,6 +158,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func refreshDetails() {
         stateItem.title = "Status: \(statusText(for: controller.state))"
+        let today = regrets.stats.total(day: RegretStatsStore.day(Date()))
+        regretItem.isHidden = controller.state == .disabled && today.moves == 0
+        regretItem.title = "Today: \(today.moves) moves · \(today.handReverts) reverted · "
+            + "\(today.bounces) \(today.bounces == 1 ? "bounce" : "bounces") (\(today.percent)%)"
         cameraItem.title = "Camera: \(visionEngine?.cameraStatus.summary ?? "stub engine (--selftest)")"
         poseItem.title = "Head: \(poseText())"
         targetItem.title = "Target: \(targetText())"
@@ -513,6 +524,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if location != lastWarpedPoint {
             lastWarpedPoint = nil
             cursorMemory.record(location, displays: snapshots)
+            if location != lastUserPointer {
+                lastUserPointer = location
+                let display = snapshots.first { $0.frame.contains(location) }?.id
+                if let regret = regrets.observeUserPointer(on: display, at: now) { noteRegret(regret) }
+            }
         }
 
         // 3. A trusted face, and 4. a prediction past the margin gate.
@@ -567,6 +583,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if controller.settings.moveCursor {
             Cursor.move(to: point)
             lastWarpedPoint = point
+            lastUserPointer = point
         } else {
             description += " (cursor move off)"
         }
@@ -588,6 +605,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         lastAction = description + "  (\(timeString()))"
         cursorMemoryStore.save(cursorMemory)
         logMove(point: point, description: description, frontmostBefore: before)
+        let bounce = regrets.recordMove(
+            to: decision.target.display, at: ProcessInfo.processInfo.systemUptime,
+            day: RegretStatsStore.day(Date())
+        )
+        if let bounce { noteRegret(bounce) } else { regretStore.save(regrets.stats) }
         if menuIsOpen { refreshDetails() }
     }
 
@@ -608,16 +630,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         cursorMemory.recordInferred(centre, for: departed.id, displays: snapshots)
     }
 
+    /// A regret is found after its move was logged, so it gets its own line.
+    private func noteRegret(_ regret: RegretEvent) {
+        regretStore.save(regrets.stats)
+        let name = snapshots.first { $0.id == regret.display }?.name ?? RegretStats.key(regret.display)
+        appendToLog("\(ISO8601DateFormatter().string(from: Date()))  \(name)  [regret: \(regret.kind.rawValue)]\n")
+        if menuIsOpen { refreshDetails() }
+    }
+
     /// Movement leaves no other trace, and "focus did not change" has several
     /// possible causes that look identical from the outside.
     private func logMove(point: CGPoint, description: String, frontmostBefore: String) {
         let after = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
-        let line = String(
+        appendToLog(String(
             format: "%@  %@  at (%.0f, %.0f)  frontmost %@ → %@%@\n",
             ISO8601DateFormatter().string(from: Date()), description,
             point.x, point.y, frontmostBefore, after,
             WindowRaiser.isPermitted ? "" : "  [no Accessibility: cannot raise a window]"
-        )
+        ))
+    }
+
+    private func appendToLog(_ line: String) {
         let url = CalibrationStore.directory.appendingPathComponent("movement.log")
         try? FileManager.default.createDirectory(at: CalibrationStore.directory, withIntermediateDirectories: true)
         if let handle = try? FileHandle(forWritingTo: url) {
