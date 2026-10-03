@@ -65,22 +65,29 @@ public final class PoseCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDe
         else { throw StartError.noBuiltInCamera }
         deviceName = device.localizedName
 
-        session.beginConfiguration()
-        session.sessionPreset = .vga640x480  // Face rectangles do not need more.
+        do {
+            session.beginConfiguration()
+            defer { session.commitConfiguration() }
+            // The session outlives start/stop: drop the previous run's (or a
+            // half-failed attempt's) input and output, or the same camera is
+            // rejected on restart.
+            session.inputs.forEach(session.removeInput)
+            session.outputs.forEach(session.removeOutput)
+            session.sessionPreset = .vga640x480  // Face rectangles do not need more.
 
-        guard let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else {
-            throw StartError.cannotConfigure("input rejected")
-        }
-        session.addInput(input)
+            guard let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else {
+                throw StartError.cannotConfigure("input rejected")
+            }
+            session.addInput(input)
 
-        let output = AVCaptureVideoDataOutput()
-        output.alwaysDiscardsLateVideoFrames = true
-        output.setSampleBufferDelegate(self, queue: queue)
-        guard session.canAddOutput(output) else {
-            throw StartError.cannotConfigure("output rejected")
+            let output = AVCaptureVideoDataOutput()
+            output.alwaysDiscardsLateVideoFrames = true
+            output.setSampleBufferDelegate(self, queue: queue)
+            guard session.canAddOutput(output) else {
+                throw StartError.cannotConfigure("output rejected")
+            }
+            session.addOutput(output)
         }
-        session.addOutput(output)
-        session.commitConfiguration()
 
         for name in [AVCaptureSession.runtimeErrorNotification, .AVCaptureDeviceWasDisconnected] {
             NotificationCenter.default.addObserver(
