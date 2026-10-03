@@ -49,6 +49,9 @@ public final class VisionTrackingEngine: TrackingEngine {
     private let capture = PoseCapture()
     private var filter: PoseFilter
     private var running = false
+    /// The permission request in flight. Stop cancels it so a late grant
+    /// cannot turn the camera on after tracking was switched off.
+    private var starting: Task<Void, Never>?
 
     public init(settings: Settings = Settings()) {
         filter = PoseFilter(
@@ -66,7 +69,7 @@ public final class VisionTrackingEngine: TrackingEngine {
     }
 
     public func start() {
-        guard !running else { return }
+        guard !running, starting == nil else { return }
         capture.onPose = { [weak self] pose in
             Task { @MainActor in self?.ingest(pose) }
         }
@@ -74,8 +77,11 @@ public final class VisionTrackingEngine: TrackingEngine {
             Task { @MainActor in self?.fail(reason) }
         }
 
-        Task { @MainActor in
-            guard await capture.requestPermission() else {
+        starting = Task { @MainActor in
+            let granted = await capture.requestPermission()
+            guard !Task.isCancelled else { return }
+            starting = nil
+            guard granted else {
                 cameraStatus = .denied
                 // Fail closed: a denied camera is an error state, not a quiet no-op.
                 onEvent?(.failed("Camera access denied. Grant it in System Settings › Privacy & Security › Camera."))
@@ -94,6 +100,13 @@ public final class VisionTrackingEngine: TrackingEngine {
     }
 
     public func stop() {
+        if let starting {
+            starting.cancel()
+            self.starting = nil
+            capture.onPose = nil
+            capture.onFailure = nil
+            return
+        }
         guard running else { return }
         running = false
         capture.stop()
